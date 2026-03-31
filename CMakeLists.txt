@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(h_walker_ws LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+find_package(Eigen3 REQUIRED)
+add_subdirectory(src/hw_common)
+add_subdirectory(src/hw_control)
