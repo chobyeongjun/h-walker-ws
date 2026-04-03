@@ -1,0 +1,262 @@
+# ================================================================
+#  h-walker-ws hardware.yaml
+#  Treadmill Gait Assist System — Cable-Driven Bilateral Walker
+#
+#  Sources:
+#    - firmware/src/Treadmill_main.ino (code constants)
+#    - CubeMars AK60-6 V1.1 KV80 datasheet
+#    - E2BOX EBIMU-9DOFV5 datasheet
+#    - PJRC Teensy 4.1 specs
+# ================================================================
+
+# ────────────────────────────────────────────────────────────────
+#  MCU
+# ────────────────────────────────────────────────────────────────
+mcu:
+  model: "Teensy 4.1"
+  processor: "ARM Cortex-M7 (NXP iMXRT1062)"
+  clock_mhz: 600
+  flash_mb: 8         # external QSPI
+  ram_kb: 1024         # 512K tightly-coupled
+  adc_resolution_bits: 12   # code: analogReadResolution(12), hw max 18-bit
+  adc_vref_v: 3.3
+  operating_voltage_v: 3.3
+  sd_card: builtin     # BUILTIN_SDCARD
+
+# ────────────────────────────────────────────────────────────────
+#  Motors (x2, bilateral)
+# ────────────────────────────────────────────────────────────────
+motors:
+  - id: "left"
+    can_id: 65                 # MOTOR_LEFT_CAN_ID (line 110)
+    model: "CubeMars AK60-6 V1.1 KV80"
+    type: "BLDC with planetary gearbox"
+    # --- Datasheet specs ---
+    nominal_voltage_v: 24
+    continuous_current_a: 6.5       # datasheet rated current
+    peak_current_a: 22.7            # datasheet peak
+    kt_nm_per_a: 0.078              # code KT_NM_PER_A (line 147), datasheet match
+    pole_pairs: 14                  # code POLE_PAIRS (line 148), datasheet match
+    gear_ratio: 6.0                 # code GEAR_RATIO (line 149), datasheet match
+    max_speed_rpm: 420              # datasheet: output shaft no-load
+    continuous_torque_nm: 3.0       # datasheet
+    peak_torque_nm: 9.0             # datasheet
+    phase_resistance_mohm: 202      # datasheet
+    phase_inductance_uh: 138        # datasheet
+    weight_g: 368                   # datasheet
+    # --- Code software limits ---
+    sw_max_current_a: 20.0          # MAX_CURRENT_A (line 165)
+    sw_max_vel_erpm: 47000          # MAX_VEL_ERPM (line 166)
+    # NOTE: sw_max_vel_erpm(47000) > 물리적 max(~35280 ERPM)
+    #   → 실질적 속도 제한 역할 못함. 실제 모터는 이 속도 미도달.
+
+  - id: "right"
+    can_id: 33                 # MOTOR_RIGHT_CAN_ID (line 111)
+    model: "CubeMars AK60-6 V1.1 KV80"
+    # (동일 사양 — left 참조)
+
+# ────────────────────────────────────────────────────────────────
+#  Mechanism (Cable Drive)
+# ────────────────────────────────────────────────────────────────
+mechanism:
+  type: "cable_spool"
+  spool_radius_m: 0.04         # SPOOL_RADIUS_M (line 150)
+  mechanical_efficiency: 0.869231  # ETA_MECH (line 151)
+  # erpm → cable speed: erpm / (POLE_PAIRS * GEAR_RATIO) * 2π/60 * SPOOL_RADIUS_M
+  position_limit_deg: 4500     # POSITION_LIMIT_DEG (line 167)
+
+# ────────────────────────────────────────────────────────────────
+#  Sensors
+# ────────────────────────────────────────────────────────────────
+sensors:
+  imu:
+    count: 2
+    model: "E2BOX EBIMU-9DOFV5"
+    type: "9-DOF AHRS (accel + gyro + mag)"
+    interface: "UART (Serial1)"
+    baudrate: 921600            # code line 3568
+    packet_size_bytes: 34       # PACKET_SIZE (line 875)
+    packet_format: "binary, big-endian, 16-bit signed + checksum"
+    ids:
+      left: 1                  # left_IMU(1) (line 1062)
+      right: 0                 # right_IMU(0) (line 1063)
+    # --- Datasheet specs ---
+    gyro_range_dps: 2000        # adjustable 250-2000
+    accel_range_g: 8            # adjustable 2-8
+    mag_range_gauss: 8.1        # adjustable 1.3-8.1
+    update_rate_hz: 100         # datasheet max (code uses binary for throughput)
+    power_ma: 40                # @ 5V
+    size_mm: "15 x 23.5"
+    # --- Scale factors (from code lines 995-1008) ---
+    scale_euler_deg: 0.01       # raw * 0.01 → degrees
+    scale_gyro_dps: 0.1         # raw * 0.1 → deg/s
+    scale_accel_g: 0.001        # raw * 0.001 → g
+    scale_dist_m: 0.001         # raw / 1000 → meters
+    # --- Special mode ---
+    soa5_mode: "global velocity output in acc_x/acc_y fields (m/s)"
+
+  loadcell:
+    count: 2
+    type: "analog strain gauge (voltage output)"
+    interface: "ADC"
+    pins:
+      left: "A16"              # LEFT_LOADCELL_PIN (line 140)
+      right: "A6"              # RIGHT_LOADCELL_PIN (line 141)
+    # --- Calibration (code lines 156-159) ---
+    left_bias: -679.2363        # [N] offset
+    left_sensitivity: 550.3382  # [N/V] scale
+    right_bias: -687.1577
+    right_sensitivity: 560.9190
+    # F = voltage * sensitivity + bias (line 1995)
+    lpf_cutoff_hz: 50           # LowPassFilter(50.0, CONTROL_FS) (line 480)
+    conversion: "AI_CNT_TO_V = 3.3 / 4096"  # (line 153)
+
+  analog_trigger:
+    pin: 21                    # ANALOG_PIN = 21 (A7, line 136)
+    threshold: 2000            # TRIGGER_THRESHOLD (line 137)
+    purpose: "external sync / logging trigger"
+
+# ────────────────────────────────────────────────────────────────
+#  Communication
+# ────────────────────────────────────────────────────────────────
+communication:
+  can:
+    peripheral: "FlexCAN_T4<CAN1>"  # (line 108)
+    baudrate: 1000000               # 1 Mbps (line 1307)
+    protocol: "VESC-compatible extended CAN"
+    packets:
+      set_current: 1            # CAN_PACKET_SET_CURRENT (line 112)
+      set_origin: 5             # CAN_PACKET_SET_ORIGIN (line 113)
+    # CAN TX: 4 bytes (current as int32, mA)
+    # CAN RX: 8 bytes (pos/speed/current/temp)
+
+  ble:
+    bridge_mcu: "Arduino Nano 33 BLE"
+    interface: "UART (Serial8)"
+    baudrate: 115200            # BLE_BAUD_RATE (line 51, BleComm.h)
+    tx_pin: 35                  # BLE_TX_PIN (line 46, BleComm.h)
+    rx_pin: 34                  # BLE_RX_PIN (line 47, BleComm.h)
+    protocol: "Nordic UART Service (NUS)"
+    logic_level_v: 3.3
+    data_send_period_ms: 20     # BLE_SEND_PERIOD_MS (line 58, BleComm.h)
+    data_count: 19              # WALKER_DATA_COUNT (line 57, BleComm.h)
+    gcp_send_period_ms: 3       # BLE_GCP_PERIOD_MS (line 62, BleComm.h)
+    rx_buffer_size: 128         # (line 76, BleComm.h)
+    rx_timeout_ms: 50           # (line 172, BleComm.cpp)
+
+  serial_debug:
+    interface: "USB Serial"
+    baudrate: 115200            # Serial.begin(115200) (line 3536)
+
+# ────────────────────────────────────────────────────────────────
+#  Control Timing
+# ────────────────────────────────────────────────────────────────
+timing:
+  velocity_loop_ms: 3           # CONTROL_PERIOD_MS (line 119) → 333 Hz
+  position_loop_ms: 9           # POSITION_PERIOD_MS (line 123) → 111 Hz
+  current_command_ms: 1         # CURRENT_PERIOD_US = 1000 (line 121) → 1 kHz
+  logging_ms: 9                 # LOG_PERIOD_MS (line 124) → 111 Hz
+  debug_print_ms: 9             # DEBUG_PERIOD_MS (line 125)
+
+# ────────────────────────────────────────────────────────────────
+#  Safety
+# ────────────────────────────────────────────────────────────────
+safety:
+  max_current_a: 20.0           # MAX_CURRENT_A — clamp before CAN TX (line 165)
+  max_velocity_erpm: 47000      # MAX_VEL_ERPM (line 166)
+  position_limit_deg: 4500      # POSITION_LIMIT_DEG — ±4500° from initial (line 167)
+  # Cable tangle detection (lines 169-172)
+  cable_tangle:
+    payout_force_threshold_n: 300.0   # SAFETY_PAYOUT_FORCE_N
+    payout_erpm_threshold: 500.0      # SAFETY_PAYOUT_ERPM
+    consecutive_ticks: 3              # SAFETY_TANGLE_TICKS (= 9ms @ 333Hz)
+  # Pretension (lines 1153-1154)
+  pretension:
+    duration_ms: 1000           # PRETENSION_DURATION_MS
+    settle_ticks: 10            # PRETENSION_SETTLE_TICKS (F >= 5N × 10 ticks)
+  # Loop watchdog
+  loop_timeout_warning_ms: 50   # main loop > 50ms → warning (line 3603)
+
+# ────────────────────────────────────────────────────────────────
+#  Gait Detection (GCP Parameters)
+# ────────────────────────────────────────────────────────────────
+gait:
+  gcp_start_mode: "HS"         # GCP_START_AT_HS (line 71)
+  # Force Assist Mode (Mode 0) — lines 192-196
+  force_assist:
+    gcp_onset: 0.60             # GCP_FORCE_ONSET — force profile start
+    gcp_peak: 0.75              # GCP_FORCE_PEAK — max force point
+    gcp_release: 0.85           # GCP_FORCE_RELEASE — force profile end
+    peak_force_n: 50.0          # PEAK_FORCE_N — max assist force
+    min_tension_n: 5.0          # MIN_TENSION_N — always-on cable tension
+  # Position Assist Mode (Mode 1) — lines 252-255
+  position_assist:
+    gcp_start: 0.10             # GCP_POS_START
+    gcp_end: 0.70               # GCP_POS_END
+    amplitude_deg: 600.0        # POSITION_AMPLITUDE_DEG
+    max_vel_erpm: 42000         # MAX_POS_VEL_ERPM
+  # Gait event detection thresholds (lines 530-539)
+  detection:
+    ho_angle_thresh_deg: 2.6
+    ho_angvel_thresh_dps: 40.0
+    hs_ratio: 0.072
+    swing_arming_ratio: 0.25
+    angle_up_thresh_deg: 15.0
+    angle_down_thresh_deg: 10.0
+    gcp_timeout_s: 4.0          # GCP inactive > 4s → reset (line 667)
+    min_step_time_s: 0.2        # valid range for step time (line 857)
+    max_step_time_s: 3.0
+    min_ho_interval_ms: 300     # MIN_HO_INTERVAL_MS (line 826)
+    hs_block_duration_ms: 200   # HS_BLOCK_DURATION_MS (line 1092)
+    skip_step_count: 2          # SKIP_STEP_COUNT — skip first N steps (line 1090)
+  # Gait LPF (line 571)
+  lpf_cutoff_hz: 9.4
+
+# ────────────────────────────────────────────────────────────────
+#  Admittance Control Parameters (defaults)
+# ────────────────────────────────────────────────────────────────
+admittance:
+  # Assist zone (ONSET → PEAK): lines 202-205
+  assist:
+    virtual_mass_kg: 1.0
+    virtual_damping_nsm: 4.0
+    max_velocity_mps: 2.1
+    max_accel_mps2: 30.0
+  # Falling zone (PEAK → RELEASE): lines 209-212
+  falling:
+    virtual_mass_kg: 1.0
+    virtual_damping_nsm: 4.0
+    max_velocity_mps: 2.1
+    max_accel_mps2: 50.0
+  # Slack zone (Pretension): lines 215-218
+  slack:
+    virtual_mass_kg: 1.0
+    virtual_damping_nsm: 4.0
+    max_velocity_mps: 2.1
+    max_accel_mps2: 50.0
+
+# ────────────────────────────────────────────────────────────────
+#  PID Gains (defaults)
+# ────────────────────────────────────────────────────────────────
+pid:
+  velocity:  # 333 Hz — lines 341-343
+    kp: 0.0011
+    ki: 0.0000005
+    kd: 0.000003
+    integral_limit: 1000.0
+  position:  # 111 Hz — lines 397-399
+    kp: 300.0
+    ki: 500.0
+    kd: 0.0
+    integral_limit: 100.0
+    output_limit_erpm: 47000.0
+
+# ────────────────────────────────────────────────────────────────
+#  Treadmill Compensation
+# ────────────────────────────────────────────────────────────────
+treadmill:
+  belt_speed_mps: 1.25          # treadmill_speed_mps (line 224)
+  tff_gain: 0.8                 # TFF_GAIN (line 225)
+  tff_end_offset: 0.10          # TFF_END_OFFSET (line 226)
+  ff_gain_f: 0.15               # FF_GAIN_F (line 231)
+  ff_gain_motion: 0.7           # FF_GAIN_MOTION (line 238)
