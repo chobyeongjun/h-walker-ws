@@ -1,0 +1,9 @@
+2026-04-03T04:02:00Z [safety] confidence:10 — 하드웨어 E-stop 미구현: e_stop/ESTOP/emergency 패턴 0건 (Treadmill_main.ino)
+2026-04-03T04:02:00Z [safety] confidence:9 — CAN 수신 타임아웃 미구현: 모터 응답 끊겨도 마지막 값으로 제어 계속 (canReceiveCallback)
+2026-04-03T04:02:00Z [safety] confidence:10 — 하드웨어 워치독 미사용: Teensy 4.1 WDOG1/WDOG2 비활성 상태
+2026-04-03T04:02:00Z [safety] confidence:9 — ISR 내 Serial.print: controllerStep:2140-2155, positionLoopStep:2052-2054 (ISR_Control 333Hz에서 호출)
+2026-04-03T04:02:00Z [safety] confidence:8 — BLE 50ms 타임아웃 시 불완전 명령 실행: BleComm.cpp:172
+2026-04-03T04:30:00Z [safety] confidence:9 — Serial handleCommand에 clampf 없음: PEAK_FORCE_N, GCP_* 등 14개 파라미터 무제한 쓰기 (lines 2950-3109)
+2026-04-03T04:30:00Z [safety] confidence:8 — ISR 우선순위 미설정: CAN FIFO ISR이 제어 ISR 선점 가능 (setupCAN:1305, timerCtrl:2492)
+2026-04-03T04:30:00Z [safety] confidence:8 — Serial 타임아웃도 BLE와 동일 취약점: 50ms 후 불완전 명령 실행 (line 3206)
+2026-04-03T04:30:00Z [safety] confidence:7 — Serial/BLE 동시 명령 시 우선순위 없음: disable→enable 토글로 의도치 않은 re-enable 가능 (loop:3610)
