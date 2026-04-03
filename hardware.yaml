@@ -82,11 +82,11 @@ sensors:
       right: 0                 # right_IMU(0) (line 1063)
     # --- Datasheet specs ---
     gyro_range_dps: 2000        # adjustable 250-2000
-    accel_range_g: 8            # adjustable 2-8
+    accel_range_g: 16           # adjustable 2-16 (V5)
     mag_range_gauss: 8.1        # adjustable 1.3-8.1
-    update_rate_hz: 100         # datasheet max (code uses binary for throughput)
-    power_ma: 40                # @ 5V
-    size_mm: "15 x 23.5"
+    update_rate_hz: 1000        # V5 max (1-1000 Hz configurable)
+    power_ma: 15                # @ 5V (V5 R3)
+    size_mm: "16.3 x 18.6"     # V5 R3
     # --- Scale factors (from code lines 995-1008) ---
     scale_euler_deg: 0.01       # raw * 0.01 → degrees
     scale_gyro_dps: 0.1         # raw * 0.1 → deg/s
